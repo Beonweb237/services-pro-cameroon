@@ -1,0 +1,787 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== UTILISATEURS ====================
+
+enum UserRole {
+  client
+  pro
+  support
+  moderator
+  admin
+}
+
+enum UserStatus {
+  active
+  suspended
+  banned
+  pending
+}
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  password      String
+  phone         String?    @unique
+  phoneVerified DateTime?
+  role          UserRole   @default(client)
+  status        UserStatus @default(active)
+  emailVerified DateTime?
+  avatar        String?
+  cityId        String?
+  city          City?      @relation(fields: [cityId], references: [id])
+  theme         String     @default("dark")
+  lastLoginAt   DateTime?
+  loginAttempts Int        @default(0)
+  lockedUntil   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  proProfile         ProProfile?
+  clientProfile      ClientProfile?
+  sentMessages       Message[]         @relation("SentMessages")
+  receivedMessages   Message[]         @relation("ReceivedMessages")
+  notifications      Notification[]
+  reportsMade        Report[]          @relation("Reporter")
+  reportsReceived    Report[]          @relation("Target")
+  refreshTokens      RefreshToken[]
+  passwordResets     PasswordReset[]
+  gamificationPoints GamificationPoint[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@map("refresh_tokens")
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  @@map("password_resets")
+}
+
+// ==================== PROFILS ====================
+
+enum ProLevel {
+  starter
+  certified
+  expert
+  elite
+  partner
+}
+
+enum AvailabilityStatus {
+  available
+  busy
+  unavailable
+}
+
+model ProProfile {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title             String?
+  bio               String?  @db.Text
+  coverPhoto        String?
+  yearsExperience   Int      @default(0)
+  languages         String[] @default(["français"])
+
+  proScore          Int      @default(0)
+  avgRating         Float    @default(0)
+  totalReviews      Int      @default(0)
+  totalMissions     Int      @default(0)
+  responseRate      Int      @default(0)
+  responseTimeHours Int      @default(0)
+
+  primarySkills     String[]
+  secondarySkills   String[]
+
+  level             ProLevel @default(starter)
+  profileCompletion Int      @default(0)
+
+  hourlyRateMin     Int?
+  hourlyRateMax     Int?
+  fixedPriceServices Json?
+
+  // Weekly recurring availability: {monday: [{start:"09:00",end:"17:00"}], ...}
+  weeklyAvailability Json?
+
+  // Real-time status
+  availabilityStatus AvailabilityStatus @default(available)
+  statusMessage      String?            @db.Text
+  statusUntil        DateTime?
+
+  categoryId        String?
+  category          Category? @relation(fields: [categoryId], references: [id])
+  cityId            String?
+  city              City?     @relation(fields: [cityId], references: [id])
+  neighborhoods     String[]  @default([])
+
+  isVerified        Boolean  @default(false)
+  isIdentityVerified Boolean @default(false)
+  isActive          Boolean  @default(true)
+
+  website           String?
+  facebook          String?
+  instagram         String?
+  linkedin          String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  reviews            Review[]
+  missions           Mission[]
+  portfolioItems     PortfolioItem[]
+  verificationDocs   VerificationDoc[]
+  subscriptions      Subscription[]
+  boosts             Boost[]
+  proBadges          ProBadge[]
+  favoritesReceived  Favorite[]
+  leaderboardEntries LeaderboardEntry[]
+  unavailabilityPeriods UnavailabilityPeriod[]
+  specialFieldValues  ProSpecialFieldValue[]
+
+  @@index([proScore])
+  @@index([level])
+  @@index([categoryId])
+  @@index([cityId])
+  @@index([isActive])
+  @@index([availabilityStatus])
+  @@map("pro_profiles")
+}
+
+model ClientProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName   String?
+  lastName    String?
+  address     String?
+  preferences Json?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  missions    Mission[]
+  reviews     Review[]
+  favorites   Favorite[]
+
+  @@map("client_profiles")
+}
+
+// ==================== CHAMPS SPÉCIALISÉS PAR CATÉGORIE ====================
+
+enum SpecialFieldType {
+  text
+  textarea
+  number
+  url
+  image
+  image_gallery
+  video_url
+  select
+  multiselect
+  date
+  boolean
+}
+
+model CategorySpecialField {
+  id          String           @id @default(cuid())
+  categoryId  String
+  category    Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  key         String
+  label       String
+  type        SpecialFieldType
+  options     Json?
+  required    Boolean          @default(false)
+  order       Int              @default(0)
+  helpText    String?
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+
+  proValues   ProSpecialFieldValue[]
+
+  @@unique([categoryId, key])
+  @@map("category_special_fields")
+}
+
+model ProSpecialFieldValue {
+  id        String   @id @default(cuid())
+  proId     String
+  pro       ProProfile @relation(fields: [proId], references: [id], onDelete: Cascade)
+  fieldId   String
+  field     CategorySpecialField @relation(fields: [fieldId], references: [id])
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([proId, fieldId])
+  @@map("pro_special_field_values")
+}
+
+// ==================== INDISPONIBILITÉS ====================
+
+model UnavailabilityPeriod {
+  id          String   @id @default(cuid())
+  proId       String
+  pro         ProProfile @relation(fields: [proId], references: [id], onDelete: Cascade)
+  startDate   DateTime
+  endDate     DateTime
+  reason      String?
+  isRecurring Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([proId])
+  @@index([startDate])
+  @@map("unavailability_periods")
+}
+
+// ==================== VILLES & QUARTIERS ====================
+
+model City {
+  id            String        @id @default(cuid())
+  name          String        @unique
+  slug          String        @unique
+  region        String
+  population    Int?
+  prosCount     Int           @default(0)
+  categoriesCount Int         @default(0)
+  neighborhoodsCount Int      @default(0)
+  image         String?
+  description   String?       @db.Text
+  topCategories String[]      @default([])
+  isActive      Boolean       @default(true)
+  phase         Int           @default(1)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  neighborhoods Neighborhood[]
+  pros          ProProfile[]
+  users         User[]
+
+  @@map("cities")
+}
+
+model Neighborhood {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String
+  cityId    String
+  city      City     @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  prosCount Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([cityId, slug])
+  @@map("neighborhoods")
+}
+
+// ==================== CATÉGORIES & FAMILLES ====================
+
+model ServiceFamily {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  slug        String     @unique
+  color       String
+  icon        String
+  description String?    @db.Text
+  prosCount   Int        @default(0)
+  order       Int        @default(0)
+  createdAt   DateTime   @default(now())
+
+  categories  Category[]
+
+  @@map("service_families")
+}
+
+model Category {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  slug            String   @unique
+  image           String?
+  description     String?  @db.Text
+  prosCount       Int      @default(0)
+  familyId        String
+  family          ServiceFamily @relation(fields: [familyId], references: [id])
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  pros            ProProfile[]
+  leaderboardEntries LeaderboardEntry[]
+  specialFields   CategorySpecialField[]
+
+  @@index([familyId])
+  @@map("categories")
+}
+
+// ==================== AVIS & NOTATIONS ====================
+
+model Review {
+  id                  String   @id @default(cuid())
+  proId               String
+  pro                 ProProfile @relation(fields: [proId], references: [id], onDelete: Cascade)
+  clientId            String
+  client              ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  qualityScore        Int
+  punctualityScore    Int
+  communicationScore  Int
+  valueScore          Int
+  professionalismScore Int
+  overallScore        Float
+
+  comment             String?  @db.Text
+  isVerified          Boolean  @default(false)
+  isModerated         Boolean  @default(false)
+  moderationStatus    String   @default("pending")
+  proResponse         String?  @db.Text
+  proResponseAt       DateTime?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  reports             Report[]
+
+  @@index([proId])
+  @@index([clientId])
+  @@map("reviews")
+}
+
+// ==================== MISSIONS ====================
+
+enum MissionStatus {
+  pending
+  accepted
+  in_progress
+  completed
+  cancelled
+  disputed
+}
+
+model Mission {
+  id          String       @id @default(cuid())
+  clientId    String
+  client      ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  proId       String
+  pro         ProProfile   @relation(fields: [proId], references: [id], onDelete: Cascade)
+  title       String
+  description String?      @db.Text
+  status      MissionStatus @default(pending)
+  amount      Int?
+  address     String?
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+  cancelledBy String?
+  reviewReminderSent Boolean @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  messages    Message[]
+
+  @@index([clientId])
+  @@index([proId])
+  @@index([status])
+  @@map("missions")
+}
+
+// ==================== MESSAGERIE ====================
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderId       String
+  sender         User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId     String
+  receiver       User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  content        String   @db.Text
+  attachments    Json?
+  isRead         Boolean  @default(false)
+  readAt         DateTime?
+  isQuoteRequest Boolean  @default(false)
+  quoteDetails   Json?
+  createdAt      DateTime @default(now())
+
+  missionId      String?
+  mission        Mission? @relation(fields: [missionId], references: [id])
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@map("messages")
+}
+
+// ==================== PLANS TARIFAIRES ====================
+
+model PricingPlan {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  slug            String   @unique
+  priceXaf        Int      @default(0)
+  commissionPercent Int    @default(15)
+  contactsLimit   Int      @default(5)
+  boostsPerMonth  Int      @default(0)
+  features        Json
+  description     String?  @db.Text
+  isPopular       Boolean  @default(false)
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  subscriptions   Subscription[]
+
+  @@map("pricing_plans")
+}
+
+model Subscription {
+  id        String   @id @default(cuid())
+  proId     String
+  pro       ProProfile @relation(fields: [proId], references: [id], onDelete: Cascade)
+  planId    String
+  plan      PricingPlan @relation(fields: [planId], references: [id])
+  status    String   @default("active")
+  startsAt  DateTime @default(now())
+  expiresAt DateTime?
+  cancelledAt DateTime?
+  autoRenew Boolean  @default(true)
+  paymentMethod String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([proId])
+  @@index([planId])
+  @@map("subscriptions")
+}
+
+// ==================== NOTIFICATIONS ====================
+
+enum NotificationType {
+  new_message
+  new_review
+  review_reminder
+  badge_unlocked
+  level_up
+  leaderboard_change
+  report_alert
+  document_expiry
+  mission_update
+  promotional
+  subscription_reminder
+  new_mission_request
+  availability_change
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  content   String           @db.Text
+  data      Json?
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@map("notifications")
+}
+
+// ==================== SIGNALEMENTS ====================
+
+enum ReportStatus {
+  pending
+  investigating
+  resolved
+  dismissed
+}
+
+enum ReportTargetType {
+  user
+  pro
+  review
+  message
+}
+
+model Report {
+  id          String           @id @default(cuid())
+  reporterId  String
+  reporter    User             @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetId    String
+  targetType  ReportTargetType
+  reason      String
+  description String?          @db.Text
+  status      ReportStatus     @default(pending)
+  priority    String           @default("normal")
+  resolvedAt  DateTime?
+  resolvedBy  String?
+  resolution  String?          @db.Text
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  reviewId    String?
+  review      Review?          @relation(fields: [reviewId], references: [id])
+
+  @@index([reporterId])
+  @@index([targetId])
+  @@index([status])
+  @@index([priority])
+  @@map("reports")
+}
+
+// ==================== BOOSTS VISIBILITÉ ====================
+
+enum BoostType {
+  express
+  monthly
+  category
+  city
+}
+
+model Boost {
+  id        String   @id @default(cuid())
+  proId     String
+  pro       ProProfile @relation(fields: [proId], references: [id], onDelete: Cascade)
+  type      BoostType
+  targetId  String?
+  startsAt  DateTime @default(now())
+  expiresAt DateTime
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([proId])
+  @@index([isActive])
+  @@map("boosts")
+}
+
+// ==================== BADGES ====================
+
+model Badge {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?  @db.Text
+  icon        String
+  color       String
+  condition   String
+  createdAt   DateTime @default(now())
+
+  proBadges   ProBadge[]
+
+  @@map("badges")
+}
+
+model ProBadge {
+  id        String   @id @default(cuid())
+  proId     String
+  pro       ProProfile @relation(fields: [proId], references: [id], onDelete: Cascade)
+  badgeId   String
+  badge     Badge    @relation(fields: [badgeId], references: [id])
+  awardedAt DateTime @default(now())
+
+  @@unique([proId, badgeId])
+  @@map("pro_badges")
+}
+
+// ==================== DOCUMENTS DE VÉRIFICATION ====================
+
+enum DocType {
+  identity
+  diploma
+  professional_license
+  insurance
+  other
+}
+
+enum DocStatus {
+  pending
+  verified
+  rejected
+  expired
+}
+
+model VerificationDoc {
+  id         String   @id @default(cuid())
+  proId      String
+  pro        ProProfile @relation(fields: [proId], references: [id], onDelete: Cascade)
+  type       DocType
+  fileUrl    String
+  fileName   String
+  status     DocStatus @default(pending)
+  reviewedAt DateTime?
+  reviewedBy String?
+  notes      String?  @db.Text
+  expiryDate DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([proId])
+  @@index([status])
+  @@map("verification_docs")
+}
+
+// ==================== PORTFOLIO ====================
+
+model PortfolioItem {
+  id          String   @id @default(cuid())
+  proId       String
+  pro         ProProfile @relation(fields: [proId], references: [id], onDelete: Cascade)
+  title       String
+  description String?  @db.Text
+  imageUrl    String
+  category    String?
+  beforeImage String?
+  afterImage  String?
+  isFeatured  Boolean  @default(false)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([proId])
+  @@map("portfolio_items")
+}
+
+// ==================== FAVORIS ====================
+
+model Favorite {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  proId     String
+  pro       ProProfile @relation(fields: [proId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([clientId, proId])
+  @@map("favorites")
+}
+
+// ==================== LEADERBOARD ====================
+
+model LeaderboardEntry {
+  id         String   @id @default(cuid())
+  proId      String
+  pro        ProProfile @relation(fields: [proId], references: [id], onDelete: Cascade)
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+  cityId     String?
+  period     String   @default("monthly")
+  rank       Int
+  previousRank Int?
+  proScore   Int
+  totalMissions Int @default(0)
+  totalReviews  Int @default(0)
+  periodStart  DateTime
+  periodEnd    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([rank])
+  @@index([period])
+  @@map("leaderboard_entries")
+}
+
+// ==================== BLOG ====================
+
+model BlogPost {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  excerpt     String?  @db.Text
+  content     String   @db.Text
+  coverImage  String?
+  authorId    String
+  authorName  String
+  category    String
+  tags        String[] @default([])
+  isPublished Boolean  @default(false)
+  publishedAt DateTime?
+  viewCount   Int      @default(0)
+  seoTitle    String?
+  seoDescription String? @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([slug])
+  @@index([category])
+  @@index([isPublished])
+  @@map("blog_posts")
+}
+
+// ==================== FAQ ====================
+
+model FAQ {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String   @db.Text
+  category  String   @default("general")
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("faqs")
+}
+
+// ==================== TÉMOIGNAGES ====================
+
+model Testimonial {
+  id        String   @id @default(cuid())
+  clientName String
+  clientAvatar String?
+  clientCity String?
+  proName   String
+  proCategory String?
+  proAvatar String?
+  rating    Int
+  comment   String   @db.Text
+  isActive  Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("testimonials")
+}
+
+// ==================== GAMIFICATION ====================
+
+model GamificationPoint {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  points    Int
+  description String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("gamification_points")
+}
+
+// ==================== CONFIGURATION PLATEFORME ====================
+
+model PlatformConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_config")
+}
