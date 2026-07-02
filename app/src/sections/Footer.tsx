@@ -83,19 +83,6 @@ export default function Footer() {
           <p className="text-xs text-ter">
             &copy; 2026 Services Pro Cameroon. Tous droits réservés.
           </p>
-          <a
-            href="https://www.beonweb.cm/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group inline-flex items-center gap-1.5 text-xs text-ter transition-colors hover:text-sec"
-          >
-            Powered by
-            <span
-              className="font-semibold gold-text-gradient transition-opacity group-hover:opacity-80"
-            >
-              Beonweb
-            </span>
-          </a>
         </div>
       </div>
     </footer>
